@@ -1,19 +1,19 @@
-import { getUserId, getUserClient, jsonResponse, errorResponse } from '@/lib/supabase'
+import { getDb, jsonResponse, errorResponse } from '@/lib/supabase'
 
 export async function PUT(request: Request) {
   try {
-    const userId = await getUserId(request)
-    if (!userId) return errorResponse('Not authenticated', 401)
+    const db = await getDb(request)
+    const token = request.headers.get('authorization')?.replace('Bearer ', '')!
+    const { data: { user } } = await db.auth.getUser(token)
+    if (!user) return errorResponse('Not authenticated', 401)
 
     const { chapterId, notes } = await request.json()
     if (!chapterId) return errorResponse('chapterId required')
 
-    const db = await getUserClient(request)
-
     const { error } = await db
       .from('chapter_progress')
       .upsert({
-        user_id: userId,
+        user_id: user.id,
         chapter_id: chapterId,
         status: 'incomplete',
         notes: notes || null,
@@ -23,7 +23,6 @@ export async function PUT(request: Request) {
     if (error) return errorResponse('Failed to save notes: ' + error.message, 500)
     return jsonResponse({ ok: true })
   } catch (e: any) {
-    const msg = e.message || 'Failed to save notes'
-    return errorResponse(msg, msg.includes('Not authenticated') || msg.includes('token') ? 401 : 500)
+    return errorResponse(e.message || 'Failed to save notes', 500)
   }
 }
