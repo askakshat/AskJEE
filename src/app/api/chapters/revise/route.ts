@@ -1,25 +1,23 @@
-import { getUserId, getUserClient, jsonResponse, errorResponse } from '@/lib/supabase'
+import { getDb, jsonResponse, errorResponse } from '@/lib/supabase'
 import { REVISION_INTERVALS_DAYS } from '@/lib/constants'
 
 export async function POST(request: Request) {
   try {
-    const userId = await getUserId(request)
-    if (!userId) return errorResponse('Not authenticated', 401)
+    const db = await getDb(request)
+    const token = request.headers.get('authorization')?.replace('Bearer ', '')!
+    const { data: { user } } = await db.auth.getUser(token)
+    if (!user) return errorResponse('Not authenticated', 401)
 
     const { chapterId } = await request.json()
     if (!chapterId) return errorResponse('chapterId required')
 
-    const db = await getUserClient(request)
-
-    // Get current progress to determine revision stage
     const { data: current } = await db
       .from('chapter_progress')
       .select('next_revision_at')
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .eq('chapter_id', chapterId)
       .maybeSingle()
 
-    // Determine next interval
     let stage = 0
     if (current?.next_revision_at) {
       const prev = new Date(current.next_revision_at)
@@ -36,7 +34,7 @@ export async function POST(request: Request) {
     const { error } = await db
       .from('chapter_progress')
       .upsert({
-        user_id: userId,
+        user_id: user.id,
         chapter_id: chapterId,
         status: 'revision',
         last_revised_at: now.toISOString(),
@@ -47,7 +45,6 @@ export async function POST(request: Request) {
     if (error) return errorResponse('Failed to log revision: ' + error.message, 500)
     return jsonResponse({ ok: true })
   } catch (e: any) {
-    const msg = e.message || 'Failed to log revision'
-    return errorResponse(msg, msg.includes('Not authenticated') || msg.includes('token') ? 401 : 500)
+    return errorResponse(e.message || 'Failed to log revision', 500)
   }
 }
