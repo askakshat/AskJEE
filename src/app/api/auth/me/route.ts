@@ -10,22 +10,19 @@ export async function GET(request: Request) {
     const { data: { user }, error } = await client.auth.getUser(token)
     if (error || !user) return errorResponse('Not authenticated', 401)
 
-    // Get profile from profiles table
     const { data: profile } = await client
       .from('profiles')
       .select('name, target_year, reminders_enabled')
       .eq('id', user.id)
       .maybeSingle()
 
-    const result: UserProfile = {
+    return jsonResponse({
       id: user.id,
       email: user.email!,
       name: profile?.name || user.user_metadata?.name || null,
       targetYear: profile?.target_year || null,
       remindersEnabled: profile?.reminders_enabled ?? true,
-    }
-
-    return jsonResponse(result)
+    })
   } catch {
     return errorResponse('Not authenticated', 401)
   }
