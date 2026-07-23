@@ -1,12 +1,15 @@
-import { getUserId, getUserClient, jsonResponse, errorResponse } from '@/lib/supabase'
+import { getDb, jsonResponse, errorResponse } from '@/lib/supabase'
 import type { ChapterWithProgress, ChapterStatus } from '@/lib/types'
 
 export async function GET(request: Request) {
   try {
-    const userId = await getUserId(request)
-    if (!userId) return errorResponse('Not authenticated', 401)
+    const db = await getDb(request)
+    const token = request.headers.get('authorization')?.replace('Bearer ', '')!
 
-    const db = await getUserClient(request)
+    // Get user ID from the validated client
+    const { data: { user } } = await db.auth.getUser(token)
+    if (!user) return errorResponse('Not authenticated', 401)
+    const userId = user.id
 
     const { data: chapters, error: chErr } = await db
       .from('chapters')
@@ -15,14 +18,14 @@ export async function GET(request: Request) {
       .order('grade', { ascending: true })
       .order('sort_order', { ascending: true })
 
-    if (chErr) return errorResponse('Failed to fetch chapters', 500)
+    if (chErr) return errorResponse('Failed to fetch chapters: ' + chErr.message, 500)
 
     const { data: progress, error: pErr } = await db
       .from('chapter_progress')
       .select('*')
       .eq('user_id', userId)
 
-    if (pErr) return errorResponse('Failed to fetch progress', 500)
+    if (pErr) return errorResponse('Failed to fetch progress: ' + pErr.message, 500)
 
     const progressMap = new Map(progress?.map((p: any) => [p.chapter_id, p]) || [])
 
@@ -43,7 +46,6 @@ export async function GET(request: Request) {
 
     return jsonResponse(result)
   } catch (e: any) {
-    const msg = e.message || 'Failed to fetch chapters'
-    return errorResponse(msg, msg.includes('Not authenticated') || msg.includes('token') ? 401 : 500)
+    return errorResponse(e.message || 'Failed to fetch chapters', 500)
   }
 }
